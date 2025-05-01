@@ -1,0 +1,70 @@
+#dn: ou=People,dc=mycompany,dc=com
+#objectClass: organizationalUnit
+#ou: People
+
+#dn: ou=Groups,dc=mycompany,dc=com
+#objectClass: organizationalUnit
+#ou: Groups
+
+#dn: cn=developers,ou=Groups,dc=mycompany,dc=com
+#objectClass: groupOfNames
+#cn: developers
+#member: uid=john,ou=People,dc=mycompany,dc=com
+
+#dn: uid=john,ou=People,dc=mycompany,dc=com
+#objectClass: inetOrgPerson
+#objectClass: posixAccount
+#objectClass: shadowAccount
+#uid: john
+#sn: Doe
+#givenName: John
+#cn: John Doe
+#displayName: John Doe
+#uidNumber: 10000
+#gidNumber: 10000
+#userPassword: {SSHA}hashedpasswordhere
+#homeDirectory: /home/john
+#loginShell: /bin/bash
+#mail: john.doe@mycompany.com'
+
+#dn: uid=Kaushik,ou=People,dc=mycompany,dc=com
+#objectClass: inetOrgPerson
+#objectClass: posixAccount
+#objectClass: shadowAccount
+#uid: Kaushik
+#sn: Surineedi
+#givenName: Kaushik
+#cn: Kaushik Surineedi
+#displayName: Kaushik Surineedi
+#uidNumber: 10000
+#gidNumber: 10000
+#userPassword: {SSHA}hashedpasswordhere
+#homeDirectory: /home/Kaushik
+#loginShell: /bin/bash
+#mail: kaushik.surineedi@mycompany.com
+
+#dn: cn=bd_adcv_restricted,ou=Groups,dc=mycompany,dc=com
+#objectClass: groupOfNames
+#cn: bd_adcv_restricted
+#member: uid=Manoj,ou=People,dc=mycompany,dc=com
+
+#dn: uid=Manoj,ou=People,dc=mycompany,dc=com
+#objectClass: inetOrgPerson
+#objectClass: posixAccount
+#objectClass: shadowAccount
+#uid: Manoj
+#sn: Bandaru
+#givenName: Manoj
+#cn: Manoj Bandaru
+#displayName: Manoj Bandaru
+#uidNumber: 10000
+#gidNumber: 10000
+#userPassword: {SSHA}hashedpasswordhere
+#homeDirectory: /home/Manoj
+#loginShell: /bin/bash
+#mail: manoj.bandaru@mycompany.com
+
+dn: cn=bd_adcv_restricted,ou=Groups,dc=mycompany,dc=com
+changetype: modify
+add: memberUid
+memberUid: Manoj
