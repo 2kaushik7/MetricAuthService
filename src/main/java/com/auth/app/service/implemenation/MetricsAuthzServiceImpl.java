@@ -48,7 +48,7 @@ public class MetricsAuthzServiceImpl implements MetricsAuthzService {
 	 * --------
 	 * pom.xml, application.props
 	 * Models MetricAuthRequest, MetricAuthResponse, MetricsInfo
-	 * Interface, ServiceImpl
+	 * Interface MetricsAuthzService, ServiceImpl MetricsAuthzServiceImpl
 	 * 
 	 */
 
