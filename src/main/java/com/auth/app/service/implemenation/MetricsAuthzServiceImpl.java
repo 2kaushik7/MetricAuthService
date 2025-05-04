@@ -2,6 +2,7 @@ package com.auth.app.service.implemenation;
 
 import static org.springframework.ldap.query.LdapQueryBuilder.query;
 
+import java.net.ConnectException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -9,23 +10,21 @@ import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.ldap.CommunicationException;
 import org.springframework.ldap.core.AttributesMapper;
 import org.springframework.ldap.core.ContextMapper;
 import org.springframework.ldap.core.DirContextAdapter;
 import org.springframework.ldap.core.LdapTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import com.auth.app.constants.AuthConstants;
 import com.auth.app.models.MetricAuthRequest;
 import com.auth.app.models.MetricAuthResponse;
+import com.auth.app.models.MetricResponse;
 import com.auth.app.service.MetricsAuthzService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -39,94 +38,87 @@ public class MetricsAuthzServiceImpl implements MetricsAuthzService {
 	@Value("${get.group.names.url}")
 	private String getGroupNamesUrl;
 
-	/*
-	 * Pending: 
-	 * ------- 
-	 * group name Exception handling Unit tests
-	 * 
-	 * Required:
-	 * --------
-	 * pom.xml, application.props, constants
-	 * Models MetricAuthRequest, MetricAuthResponse, MetricsInfo
-	 * Interface MetricsAuthzService, ServiceImpl MetricsAuthzServiceImpl
-	 * 
-	 */
-
-	/*
-	 * Takes username, list of metrics and tenant as input in MetricAuthRequest.
-	 * Gives List<MetricAuthResponse> as output. Calls another microservice to get
-	 * role group names. User is allowed or not for each metric.
-	 */
 	@Override
 	public List<MetricAuthResponse> authorizationService(MetricAuthRequest metricAuthRequest)
 			throws JsonMappingException, JsonProcessingException {
-		RestTemplate restTemplate = new RestTemplate();
-		HttpHeaders headers = new HttpHeaders();
-		headers.setContentType(MediaType.APPLICATION_JSON);
-		HttpEntity<MetricAuthRequest> request = new HttpEntity<>(metricAuthRequest, headers);
-		ResponseEntity<Map<String, String>> response = restTemplate.postForEntity(getGroupNamesUrl, request,
-				(Class<Map<String, String>>) (Class<?>) Map.class);
-		Map<String, String> metricMap = response.getBody();
-		return getGroupLevelAuthorization(metricAuthRequest.getUsername(), metricMap);
+
+		String json = "{ \"result\": [ { \"metric\": \"memory_usage\", \"ldap_group_name\": \"bd_adcv_restricted\" }, { \"metric\": \"svlt_tx_min\", \"ldap_group_name\": \"bd_t1_analyst\" }, { \"metric\": \"system_memory_in_use_metric\", \"ldap_group_name\": \"bd_t1_analyst\" } ] }";
+		ObjectMapper mapper = new ObjectMapper();
+		MetricResponse metricList = mapper.readValue(json, MetricResponse.class);
+			return getGroupLevelAuthorization(metricAuthRequest.getUsername(), metricList);
 	}
 
-	/*
-	 * Takes username and groups as input. Gives List<MetricAuthResponse> as output.
-	 * Gets userDN (Distinguished Dame) by calling getUserFullDN() Using user's full
-	 * dn checks the user exists is the group. After verifying the above scenarios
-	 * the List<MetricAuthResponse> is filled with respective status and returned.
-	 */
-	public List<MetricAuthResponse> getGroupLevelAuthorization(String username, Map<String, String> groups) {
-		Map<String, String> result = new HashMap<>();
-		List<MetricAuthResponse> metricAuthResponses = new ArrayList<>();
 
-		String userDn = getUserFullDN(username);
-		log.info("userDn: " + userDn);
-		groups.forEach((metric, group) -> {
-			// log.info("Group: "+group);
-			if (userDn.isEmpty()) {
-				result.put(metric, AuthConstants.USER_NOT_EXIST);
-				metricAuthResponses.add(new MetricAuthResponse(metric, group, AuthConstants.USER_NOT_EXIST));
-			}
-			// log.info("group: " + group);
-			boolean groupExists = ldapTemplate
-					.search(query().where("objectClass").is("groupOfNames").and("cn").is(group),
-							(AttributesMapper<Boolean>) attrs -> true // just confirm it exists
-			).stream().findFirst().orElse(false);
-			if (groupExists) {
-				boolean isMember = ldapTemplate
-						.search(query().where("objectClass").is("groupOfNames").and("cn").is(group).and("member")
-								.is(userDn), (AttributesMapper<Boolean>) attrs -> true)
-						.stream().findFirst().orElse(false);
+	public List<MetricAuthResponse> getGroupLevelAuthorization(String username, MetricResponse groups) {
+	    List<MetricAuthResponse> metricAuthResponses = new ArrayList<>();
 
-				result.put(metric, isMember ? AuthConstants.USER_EXISTS : AuthConstants.USER_NOT_EXIST);
-				if (!isMember) {
-					metricAuthResponses.add(new MetricAuthResponse(metric, group, AuthConstants.USER_NOT_AUTHORIZED));
-				}
-			} else {
-				result.put(metric, AuthConstants.GROUP_NOT_EXIST); // group doesn't exist
-				metricAuthResponses.add(new MetricAuthResponse(metric, group, AuthConstants.GROUP_NOT_EXIST));
-			}
+	    String userDn;
+	    try {
+	        userDn = getUserFullDN(username);
+	    } catch (CommunicationException e) {
+	        log.error("LDAP connection failed while fetching user DN for {}", username, e);
+	        groups.getResult().forEach(m ->
+	            metricAuthResponses.add(new MetricAuthResponse(m.getMetric(), m.getLdapGroupName(), "LDAP connection failed while checking for user "+username))
+	        );
+	        return metricAuthResponses;
+	    }
 
-		});
+	    log.info("userDn: " + userDn);
 
-		return metricAuthResponses;
+	    for (MetricResponse.MetricEntry m : groups.getResult()) {
+	        String metric = m.getMetric();
+	        String group = m.getLdapGroupName();
+
+	        if (userDn.isEmpty()) {
+	            metricAuthResponses.add(new MetricAuthResponse(metric, group, "User record not found for "+username));
+	            continue;
+	        }
+
+	        try {
+	            boolean groupExists = ldapTemplate
+	                .search(query().where("objectClass").is("groupOfNames").and("cn").is(group),
+	                        (AttributesMapper<Boolean>) attrs -> true)
+	                .stream().findFirst().orElse(false);
+
+	            if (groupExists) {
+	                boolean isMember = ldapTemplate
+	                    .search(query().where("objectClass").is("groupOfNames").and("cn").is(group).and("member")
+	                            .is(userDn), (AttributesMapper<Boolean>) attrs -> true)
+	                    .stream().findFirst().orElse(false);
+
+	                if (!isMember) {
+	                    metricAuthResponses.add(new MetricAuthResponse(metric, group, AuthConstants.USER_NOT_AUTHORIZED));
+	                }
+	            } else {
+	                metricAuthResponses.add(new MetricAuthResponse(metric, group, AuthConstants.GROUP_NOT_EXIST));
+	            }
+	        } catch (CommunicationException e) {
+	            log.error("LDAP connection failed while checking group {} for user {}", group, username, e);
+	            metricAuthResponses.add(new MetricAuthResponse(metric, group, "LDAP connection failed while checking group "+group+" for user "+username));
+	        }
+	    }
+
+	    return metricAuthResponses;
 	}
+
 
 	/*
 	 * Takes username as input Returns userDN (Distinguished Dame) If user is not
 	 * found returns an empty string
 	 */
 	public String getUserFullDN(String username) {
-		List<String> userDns = ldapTemplate.search(
-				query().where("objectClass").is("inetOrgPerson").and("uid").is(username),
-				(ContextMapper<String>) ctx -> ((DirContextAdapter) ctx).getNameInNamespace());
+	    try {
+	        List<String> userDns = ldapTemplate.search(
+	            query().where("objectClass").is("inetOrgPerson").and("uid").is(username),
+	            (ContextMapper<String>) ctx -> ((DirContextAdapter) ctx).getNameInNamespace()
+	        );
 
-		if (userDns.isEmpty()) {
-			return new StringBuilder("").toString();
-		}
-
-		return userDns.get(0);
+	        return userDns.isEmpty() ? "" : userDns.get(0);
+	    } catch (CommunicationException e) {
+	        log.error("Failed to connect to LDAP while resolving userDN for user: {}", username, e);
+	        throw e; // Let the calling method decide how to handle it
+	    }
 	}
+
 
 }
