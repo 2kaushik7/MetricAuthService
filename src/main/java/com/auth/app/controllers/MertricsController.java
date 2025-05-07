@@ -1,12 +1,6 @@
 package com.auth.app.controllers;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,9 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.auth.app.constants.AuthConstants;
 import com.auth.app.models.MetricAuthRequest;
-import com.auth.app.models.MetricAuthResponse;
 import com.auth.app.models.Person;
 import com.auth.app.repositories.PersonRepository;
 import com.auth.app.service.MetricsAuthzService;
@@ -51,19 +43,11 @@ public class MertricsController {
 	 */
 	@PostMapping("/group")
 	@Operation(summary = "Get Authorization status for user", description = "Authorization is verified if user can access the metrics")
-	public ResponseEntity<List<MetricAuthResponse>> getMetricInfo(@RequestBody MetricAuthRequest metricAuthRequest)
+	public ResponseEntity<String> getMetricInfo(@RequestBody MetricAuthRequest metricAuthRequest)
 			throws JsonMappingException, JsonProcessingException {
 		log.info("username: " + metricAuthRequest.getUsername());
 		metricAuthRequest.getMetrics().forEach(metric -> System.out.println(metric));
-		List<MetricAuthResponse> verdict = metricsAuthzService.authorizationService(metricAuthRequest);
-		verdict.forEach((v) -> log.info(v.getGroup() + " - " + v.getMetric()+ " - " + v.getStatus()));
-		boolean atleastOneNotAuthorized = verdict.stream()
-				.anyMatch(value -> AuthConstants.GROUP_NOT_EXIST.equals(value.getStatus()) || AuthConstants.USER_NOT_EXIST.equals(value.getStatus()) || AuthConstants.USER_NOT_AUTHORIZED.equals(value.getStatus()));
-		if (atleastOneNotAuthorized) {
-			return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(verdict);
-		} else {
-			return ResponseEntity.ok(verdict);
-		}
+		return ResponseEntity.ok(metricsAuthzService.authorizationService(metricAuthRequest));
 	}
 
 	@GetMapping("/{username}")
